@@ -1,205 +1,101 @@
-import numpy
+import numpy as np
 import matplotlib.pyplot as plt
 import math
-from scipy.signal import argrelextrema
 
-F1E = [1]
-FC = [1]
-FE = [1]
-steps = [0]
-SGP1 = 0
-SGP2 = 0
-fS1 = 0
-fS2 = 0
-Zeros = []
+# === Вхідні дані ===
+lam = 3.2e-2          # довжина хвилі, м
+a = 13e-2              # розмір апертури по Е, м
+b = 13e-2              # розмір апертури по Н, м
+k = 2 * np.pi / lam    # хвильове число
 
-max_x_FC = []
-max_y_FC = []
-max_x_FE = []
-max_y_FE = []
+print(f"λ = {lam*100:.2f} см")
+print(f"a = {a*100:.2f} см, b = {b*100:.2f} см")
+print(f"k = {k:.2f} рад/м")
 
-min_x_FC = []
-min_y_FC = []
-min_x_FE = []
-min_y_FE = []
+# === Масив кутів ===
+theta = np.arange(-np.pi/2, np.pi/2, 0.0001)
+theta_deg = np.degrees(theta)
 
-N = 9
-F = 560 * 10 ** 6
-lambd = 299792458 / F
-print("λ = " + str(lambd) + "(m)")
-d = 0.25 * lambd
-print("dcp = " + str(d) + "(m)")
-k = (2 * numpy.pi) / lambd
-print("k = " + str(k) + "(rad/m)")
+# === Допоміжна функція sinc ===
+def sinc(x):
+    return np.where(np.abs(x) < 1e-12, 1, np.sin(x)/x)
 
+# === Формули нормованих ДС ===
+FE = np.abs(sinc(k * a / 2 * np.sin(theta)))**2
+FH = np.abs(sinc(k * b / 2 * np.sin(theta)))**2
 
-for teta in numpy.arange(0.01, numpy.pi / 2, 0.00001):
-    mn1 = abs((numpy.cos(numpy.pi/2 * numpy.sin(teta))/numpy.cos(teta)))
-    mn2 = abs(numpy.sin((N * k * d * (1 - numpy.cos(teta)) / 2)) / (N * numpy.sin((k * d * (1 - numpy.cos(teta))) / 2)))
-    mn3 = mn1 * mn2
+# === Нормування ===
+FE /= np.max(FE)
+FH /= np.max(FH)
 
-    F1E += [mn1]
-    FC += [mn2]
-    FE += [mn3]
+# === Визначення ширини головної пелюстки на рівні 0.707 ===
+def find_hpbw(angle_deg, pattern):
+    indices = np.where(pattern >= 0.707)[0]
+    if len(indices) == 0:
+        return 0, 0, 0
+    left, right = angle_deg[indices[0]], angle_deg[indices[-1]]
+    width = right - left
+    return width, left, right
 
-    if 0.707 < mn2 < 0.708:
-        SGP1 = 2 * math.degrees(teta)
-        fS1 = mn2
+E_hpbw, E_left, E_right = find_hpbw(theta_deg, FE)
+H_hpbw, H_left, H_right = find_hpbw(theta_deg, FH)
 
-    if 0.707 < mn3 < 0.708:
-        SGP2 = 2 * math.degrees(teta)
-        fS2 = mn3
+print(f"\nШирина головної пелюстки в площині E ≈ {E_hpbw:.2f}° (від {E_left:.2f}° до {E_right:.2f}°)")
+print(f"Ширина головної пелюстки в площині H ≈ {H_hpbw:.2f}° (від {H_left:.2f}° до {H_right:.2f}°)")
 
-    steps += [math.degrees(teta)]
+# === Знаходження максимумів та мінімумів ===
+def find_extrema(values, angles):
+    max_x, max_y, min_x, min_y = [], [], [], []
+    for i in range(1, len(values) - 1):
+        if values[i] > values[i - 1] and values[i] > values[i + 1]:
+            max_x.append(angles[i])
+            max_y.append(values[i])
+        if values[i] < values[i - 1] and values[i] < values[i + 1]:
+            min_x.append(angles[i])
+            min_y.append(values[i])
+    return max_x, max_y, min_x, min_y
 
+max_x_FE, max_y_FE, min_x_FE, min_y_FE = find_extrema(FE, theta_deg)
+max_x_FH, max_y_FH, min_x_FH, min_y_FH = find_extrema(FH, theta_deg)
 
-for i in range(1, len(FC) - 1):
-    if FC[i] > FC[i - 1] and FC[i] > FC[i + 1]:
-        max_x_FC.append(steps[i])
-        max_y_FC.append(FC[i])
-    if FE[i] > FE[i - 1] and FE[i] > FE[i + 1]:
-        max_x_FE.append(steps[i])
-        max_y_FE.append(FE[i])
+# === Таблиця екстремумів ===
+print("\nТаблиця 1 – Екстремуми ДС рупорної антени")
+print("-------------------------------------------")
+print("| № | θmin(H) | θmin(E) | θmax(H) | FH(θ) | θmax(E) | FE(θ) |")
+for i in range(max(len(max_x_FE), len(max_x_FH))):
+    n = i + 1
+    tminH = f"{min_x_FH[i]:.2f}" if i < len(min_x_FH) else " - "
+    tminE = f"{min_x_FE[i]:.2f}" if i < len(min_x_FE) else " - "
+    tmaxH = f"{max_x_FH[i]:.2f}" if i < len(max_x_FH) else " - "
+    FmaxH = f"{max_y_FH[i]:.3f}" if i < len(max_y_FH) else " - "
+    tmaxE = f"{max_x_FE[i]:.2f}" if i < len(max_x_FE) else " - "
+    FmaxE = f"{max_y_FE[i]:.3f}" if i < len(max_y_FE) else " - "
+    print(f"| {n:<2}|{tminH:<8}|{tminE:<8}|{tmaxH:<8}|{FmaxH:<7}|{tmaxE:<8}|{FmaxE:<7}|")
+print("-------------------------------------------")
 
+# === Побудова графіка ===
+fig, ax = plt.subplots(figsize=(10, 6))
+ax.plot(theta_deg, FE, label="E-площина", color="tab:blue")
+ax.plot(theta_deg, FH, label="H-площина", color="tab:orange")
+ax.axhline(0.707, color='r', linestyle='--', linewidth=0.8, label='Рівень 0.707 (½ потужності)')
 
-for i in range(1, len(FC) - 1):
-    if FC[i] < FC[i - 1] and FC[i] < FC[i + 1]:
-        min_x_FC.append(steps[i])
-        min_y_FC.append(FC[i])
-    if FE[i] < FE[i - 1] and FE[i] < FE[i + 1]:
-        min_x_FE.append(steps[i])
-        min_y_FE.append(FC[i])
+# Маркери ШГП
+ax.plot([E_left, E_right], [0.707, 0.707], 'bo')
+ax.plot([H_left, H_right], [0.707, 0.707], 'ro')
 
+# Анотації
+ax.annotate(f"ШГП E = {E_hpbw:.2f}°", xy=(E_right, 0.707), xytext=(E_right + 3, 0.73),
+             arrowprops=dict(arrowstyle="->", color="blue"), fontsize=8, color="blue")
+ax.annotate(f"ШГП H = {H_hpbw:.2f}°", xy=(H_right, 0.707), xytext=(H_right + 3, 0.63),
+             arrowprops=dict(arrowstyle="->", color="red"), fontsize=8, color="red")
 
-print("Ширина головної пелюстки в площині H = " + str(round(SGP1, 2)) + '\u00b0')
-print("Ширина головної пелюстки в площині E = " + str(round(SGP2, 2)) + '\u00b0')
-
-
-# Якщо ви хочете отримати окремі таблиці, то використовуйте закоментований код.
-# print("Табл. 1 - Значення нульових кутів")
-# print("-----------------")
-# print("| № |  θ  |FH(θ)|")
-# m = 1
-# for i in min_x_FC:
-#     print(f"| {m} |{i:.2f}|  {0}  |")
-#     m += 1
-# print("-----------------")
-#
-#
-# print("Табл. 2 - Значення максимальних кутів E")
-# print("-----------------")
-# print("| № |  θ  |FH(θ)|")
-# m = 1
-# for i in max_x_FE:
-#     print(f"| {m} |{i:.2f}| {max_y_FE[m-1]:.2f}|")
-#     m += 1
-# print("-----------------")
-#
-#
-# print("Табл. 3 - Значення максимальних кутів H")
-# print("-----------------")
-# print("| № |  θ  |FH(θ)|")
-# m = 1
-# for i in max_x_FC:
-#     print(f"| {m} |{i:.2f}| {max_y_FC[m-1]:.2f}|")
-#     m += 1
-# print("-----------------")
-
-
-# Код нижче виводить загальну таблицю. Якщо будете виводити окремо, то цю частину закоментуйте.
-len_value = [len(max_x_FC), len(max_x_FE), len(min_x_FC), len(min_x_FE)]
-print("Табл. 1 - Аналіз ДС Директорної антени в площині Н та Е")
-print("-----------------------------------------")
-print("| № |θminH|θminE|θmaxH|FH(θ)|θmaxE|FE(θ)|")
-for i in range(0, max(len_value)):
-    v1 = f" {i + 1:.0f}"
-    if len(v1) < len(str(max(len_value))) + 2:
-        v1 += " "
-    v2 = f"{min_x_FC[i]:.2f}" if i < len_value[3] else '  -  '
-    if len(v2) < 5:
-        v2 += "0"
-    v3 = f"{min_x_FE[i]:.2f}" if i < len_value[2] else '  -  '
-    if len(v3) < 5:
-        v3 += "0"
-    v4 = f"{max_x_FC[i]:.2f}" if i < len_value[0] else '  -  '
-    if len(v4) < 5:
-        v4 += "0"
-    h4 = f"{max_y_FC[i]:.3f}" if i < len_value[0] else '  -  '
-    if len(h4) < 5:
-        h4 += "0"
-    v5 = f"{max_x_FE[i]:.2f}" if i < len_value[1] else '  -  '
-    if len(v5) < 5:
-        v5 += "0"
-    h5 = f"{max_y_FE[i]:.3f}" if i < len_value[1] else '  -  '
-    if len(h5) < 5:
-        h5 += "0"
-    print(f"|{v1}|{v2}|{v3}|{v4}|{h4}|{v5}|{h5}|")
-print("-----------------------------------------")
-# До сюди коментар, якщо не будете використовувати цей код для виводу таблиці.
-
-
-# Код нижче будує графік, який вам потрібен для звіту.
-fig, ax = plt.subplots(figsize=(20/2.54, 12/2.54))
-ax.plot(steps, F1E, linewidth=0.7, label="$ F_{1e}(θ) $")
-ax.plot(steps, FC, linewidth=0.7, label="$ F_{H}(θ) $")
-ax.plot(steps, FE, linewidth=0.7, label="$ F_{E}(θ) $")
-ax.plot(SGP1/2, fS1, 'ro', markersize=4, label="ШГП в площині H")
-ax.plot(SGP2/2, fS2, 'go', markersize=4, label="ШГП в площині E")
-
-plt.annotate(f'({fS1:.3f}, {SGP1/2:.2f}\u00b0)',
-                 xy=(SGP1 / 2, fS1),
-                 xytext=((SGP1/2)+3, fS1+0.05),
-                 arrowprops=dict(arrowstyle='->', color='black'), fontsize=6)
-
-plt.annotate(f'({fS2:.3f}, {SGP2/2:.2f}\u00b0)',
-                 xy=(SGP2 / 2, fS2),
-                 xytext=((SGP2/2)-13, fS2+0.05),
-                 arrowprops=dict(arrowstyle='->', color='black'), fontsize=6)
-
-ax.plot([0, SGP1/2], [fS2, fS2], 'r--', linewidth=0.5)
-ax.plot([SGP2/2, SGP2/2], [0, fS2], 'r--', linewidth=0.5)
-ax.plot([SGP1/2, SGP1/2], [0, fS1], 'r--', linewidth=0.5)
-
-ax.plot(max_x_FC, max_y_FC, "o", markersize=4, color="black", label="$ \\theta_{max} $ FH")
-ax.plot(max_x_FE, max_y_FE, "o", markersize=4, color="grey", label="$ \\theta_{max} $ FE")
-
-ax.plot(min_x_FC, min_y_FC, "o", markersize=4, color="blue", label="$ \\theta_{min} $ FH та FE")
-# ax.plot(min_x_FE, min_y_FE, "o", markersize=4, color="blue", label="$ \\theta_{min} $ FE")
-
-ax.set_xlabel('θ' + '\u00b0', fontsize=10)
-ax.set_ylabel('|Fh(θ' + '\u00b0' + ')|, |Fe(θ' + '\u00b0' + ')|, |F1e(θ' + '\u00b0' + ')|', fontsize=10)
-plt.xticks(numpy.arange(0, 100, 2), fontsize=7)
-plt.yticks(numpy.arange(0, 1.2, 0.1), fontsize=7)
-plt.ylim(-0.01, 1.01)
-plt.xlim(0, 90.5)
-
-
-# Якщо вам потрібні примітки на зображенні, то код нижче можна розкоментувати.
-
-# for i in range(len(max_x_FC)):
-#     plt.vlines(x=max_x_FC[i], ymin=0, ymax=max_y_FC[i], colors='green', linestyles='dashed', linewidth=0.5)
-#     plt.hlines(y=max_y_FC[i], xmin=0, xmax=max_x_FC[i], colors='green', linestyles='dashed', linewidth=0.5)
-#     plt.annotate(f'({max_y_FC[i]:.2f}, {max_x_FC[i]:.2f}\u00b0)',
-#                  xy=(max_x_FC[i], max_y_FC[i]),
-#                  xytext=(max_x_FC[i]+4, max_y_FC[i]+0.1),
-#                  arrowprops=dict(arrowstyle='->', color='black'), fontsize=6)
-#
-# for i in range(len(max_x_FE)):
-#     plt.vlines(x=max_x_FE[i], ymin=0, ymax=max_y_FE[i], colors='green', linestyles='dashed', linewidth=0.5)
-#     plt.hlines(y=max_y_FE[i], xmin=0, xmax=max_x_FE[i], colors='green', linestyles='dashed', linewidth=0.5)
-#     plt.annotate(f'({max_y_FE[i]:.2f}, {max_x_FE[i]:.2f}\u00b0)',
-#                  xy=(max_x_FE[i], max_y_FE[i]),
-#                  xytext=(max_x_FE[i]+1, max_y_FE[i]+0.04),
-#                  arrowprops=dict(arrowstyle='->', color='black'), fontsize=6)
-#
-# for i in range(len(min_x_FC)):
-#     plt.annotate(f'({min_x_FC[i]:.2f}\u00b0)',
-#                  xy=(min_x_FC[i], min_y_FC[i]),
-#                  xytext=(min_x_FC[i]-13, min_y_FC[i]+0.04),
-#                  arrowprops=dict(arrowstyle='->', color='black'), fontsize=6)
-
-plt.legend(loc="upper right", fontsize=7)
-plt.grid(which='both', linestyle='--', linewidth=0.2, color='gray')
-# plt.show()
-fig.savefig("ДС у площині Н та Е, лабораторна 1.jpg", dpi=600)
+ax.set_title("Нормовані діаграми спрямованості рупорної антени (варіант 8)")
+ax.set_xlabel("Кут θ, градуси")
+ax.set_ylabel("Нормована амплітуда")
+ax.set_xlim(-90, 90)
+ax.set_ylim(0, 1.05)
+ax.legend()
+ax.grid(True, linestyle="--", linewidth=0.5)
+plt.tight_layout()
+plt.savefig("ДС_рупорна_антена_вар8.png", dpi=400)
 plt.show()
